@@ -186,7 +186,6 @@ files = [
 [package.dependencies]
 googleapis-common-protos = ">=1.57,<2.0"
 grpcio = [
-    {version = ">=1.63.2,<2.0.0", markers = "python_version < \"3.13\""},
     {version = ">=1.66.2,<2.0.0", markers = "python_version == \"3.13\""},
     {version = ">=1.75.1,<2.0.0", markers = "python_version >= \"3.14\""},
 ]
@@ -589,5 +588,5 @@ dev = ["pytest", "setuptools"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = "^3.11"
-content-hash = "9e3c1c548d21976ae4be126311e8baad858faa53d94b119347f19d74d2d62022"
+python-versions = "^3.13"
+content-hash = "bfbaa7851ef901cfe3ac37c2febb4b0a0f5b85fdf24db3e72a93904ff87988ac"
