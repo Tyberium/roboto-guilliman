@@ -4,7 +4,7 @@ AI-powered Warhammer **11th edition** rules arbiter for [battleplan.uk](https://
 
 Ro-boto-guilliman answers rules questions using retrieval-augmented generation (RAG) over
 ingested core rules PDFs. It cites page/section context, refuses to hallucinate when the
-index does not cover a interaction, and caches repeat questions in Firestore.
+index does not cover a interaction and caches repeat questions in Firestore.
 
 **Deploys only via GitHub Actions.** Infrastructure is Pulumi. Tuned for GCP free tier.
 
