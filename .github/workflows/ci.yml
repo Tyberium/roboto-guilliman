@@ -105,10 +105,10 @@ jobs:
           pulumi stack select "${{ env.PULUMI_STACK }}" --create
           pulumi config set gcp:project "${{ env.GCP_PROJECT_ID }}"
           pulumi config set gcp:region "${{ env.GCP_REGION }}"
-          if ! pulumi stack output artifact_registry >/dev/null 2>&1; then
+          if ! pulumi stack output cloud_run_uri >/dev/null 2>&1; then
             pulumi config set image "${{ env.PLACEHOLDER_IMAGE }}"
-            pulumi up --yes
           fi
+          pulumi up --yes
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
