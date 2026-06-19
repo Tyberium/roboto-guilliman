@@ -6,16 +6,21 @@ from google import genai
 from google.genai import types
 
 from roboto_guilliman.config import Settings, get_settings
+from roboto_guilliman.gcp_auth import optional_local_credentials
 
 
 class EmbeddingService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
-        self.client = genai.Client(
-            vertexai=True,
-            project=self.settings.gcp_project_id,
-            location=self.settings.gcp_location,
-        )
+        credentials = optional_local_credentials()
+        client_kwargs: dict[str, object] = {
+            "vertexai": True,
+            "project": self.settings.gcp_project_id,
+            "location": self.settings.gcp_location,
+        }
+        if credentials is not None:
+            client_kwargs["credentials"] = credentials
+        self.client = genai.Client(**client_kwargs)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:

@@ -10,6 +10,23 @@ from roboto_guilliman.prompts import (
 )
 
 
+def test_format_context_includes_rule_number_and_figure():
+    chunks = [
+        RetrievedChunk(
+            text="Roll one D6.",
+            page=31,
+            section_hint="BATTLE-SHOCK TESTS",
+            source="core_rules_11th",
+            rule_number="09.01",
+            figure_description="Four illustrated Battle-shock examples.",
+        )
+    ]
+    rendered = format_context(chunks)
+    assert "Rule 09.01" in rendered
+    assert "Diagram on this page" in rendered
+    assert "Four illustrated Battle-shock examples." in rendered
+
+
 def test_format_context_includes_citation():
     chunks = [
         RetrievedChunk(

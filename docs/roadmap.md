@@ -11,16 +11,17 @@
 | Module | Status | Notes |
 |--------|--------|-------|
 | FastAPI on Cloud Run | ✅ Deployed | `europe-west1`, public `/health`, `/v1/ask` live |
-| Firestore vector store | ✅ Live | 768-dim COSINE index, `warhammer_rules_11th` collection (empty until ingest) |
+| Firestore vector store | ✅ Live | 768-dim COSINE index; **156 core rule chunks** ingested |
 | Chat history cache | ✅ Live | SHA-256 keyed, skips LLM on cache hit |
-| Gemini 2.5 Flash-Lite | ✅ Wired | Vertex AI, `temperature=0.2`, no hallucination persona |
+| Gemini 2.5 Flash-Lite | ✅ Wired | Vertex AI; richer prompts, `top_k=8`, figure captions in context |
 | `text-embedding-004` | ✅ Wired | Separate task types for doc/query |
-| Recursive chunker | ✅ Tested | Paragraph-aware fallback; `core_rules` uses rule-number parser (137 chunks) |
+| Recursive chunker | ✅ Tested | Paragraph-aware fallback; `core_rules` uses rule-number parser (156 chunks; see `docs/core_rules_chunking.md`) |
 | Preview chunks CLI | ✅ Working | `poetry run preview-chunks` for `#New40k` core rules |
+| Figure captions | ✅ Done (core) | `caption-core-rules-pages` → `page_captions.json`; merged at ingest |
 | Source registry | ✅ Working | Parser profiles, `excluded/` quarantine, ingest guards |
 | Legacy edition guard | ✅ Working | `/v1/ask` refuses 9th/10th ed queries before retrieval |
 | Download CLI | ✅ Working | `poetry run download-rules` via GW public downloads API (~72 PDFs) |
-| Ingest CLI | ✅ Working | `poetry run ingest-rules`, batch commits to Firestore |
+| Ingest CLI | ✅ Working | `poetry run ingest-rules`; core rules + `figure_description` wired |
 | Pulumi IaC | ✅ CI-managed | Python, `main` stack, Artifact Registry + Cloud Run |
 | GitHub Actions CI | ✅ Passing | ruff → pytest → Docker build → `pulumi up` → smoke test `/health` |
 | Local rules corpus | ✅ Downloaded | `data/rules/{parser_profile}/` + manifest (~825 MB, gitignored) |
@@ -48,8 +49,9 @@ and legacy), miscellaneous.
 |-----|--------|-------|
 | No chunking strategy implemented | Core rules parser done; faction packs still flat text | 4a |
 | No chunk preview CLI | Other profiles still lack preview parsers | 4a |
-| Firestore corpus empty | API returns "no relevant rule text" until ingest runs | 5 |
-| No batch ingest | 72 PDFs downloaded locally; ingest is still one PDF at a time | 5 |
+| Core rules only in Firestore | Faction packs / missions not ingested yet | 5 |
+| No batch ingest | 72 PDFs local; `--only-changed` manifest ingest not built | 5 |
+| No billing kill switch | Budget alert emails only; spend is not capped in software | 0 |
 | No auth on `/v1/ask` | Anyone can drain your Vertex AI quota | 1 |
 | No WhatsApp channel | Primary use-case undelivered | 2 |
 | No Battleplan frontend widget | Secondary integration undelivered | 3 |
@@ -122,7 +124,7 @@ title + category heuristics in `source_registry.py`.
 
 | Profile | Boundary | Overlap |
 |---------|----------|---------|
-| `core_rules` | One chunk per rule number | None across rules | `#New40k` PDF only (137 rules). Sep 2024 + Quick Start → `excluded/` (never ingested). |
+| `core_rules` | One chunk per rule number | None across rules | `#New40k` PDF only (156 chunks). Sep 2024 + Quick Start → `excluded/` (never ingested). See `docs/core_rules_chunking.md`. |
 | `updates_and_faq` | One Q+A or errata block | None |
 | `reference` | One table row / detachment block | None |
 | `faction_packs` | Stratagem, ability, or unit datasheet | None across units |
@@ -137,6 +139,23 @@ title + category heuristics in `source_registry.py`.
    thin, attach cached page PNG to the LLM call (multimodal answer path).
 3. **Do not** embed image pixels in Firestore vectors.
 
+### Edition naming (#New40k = 11th edition)
+
+GW's downloads API exposes three core-rules-adjacent PDFs:
+
+| GW title | Category | Edition | roboto folder |
+|----------|----------|---------|---------------|
+| `#New40k - Core Rules` | `new40k` | **11th** (Jun 2026 launch) | `core_rules/` |
+| `Core Rules` | `core-rules-and-key-downloads` | **10th** (Sep 2024 layout) | `excluded/` |
+| `Core Rules Updates and Rules Commentary` | `core-rules-and-key-downloads` | Current errata | `updates_and_faq/` |
+
+Community and press call the Jun 2026 launch **11th edition**; GW marketing uses **#New40k**.
+Both refer to the same rules generation - not the Sep 2024 book.
+
+**LLM risk:** Training data is dominated by 9th/10th mechanics. Until Firestore is populated,
+`/v1/ask` may still feel "10th-ish" on non-legacy questions if the model free-wheels. Ingest
+`#New40k` core rules first; keep `temperature` low; cite `[Rule NN.NN]` from retrieved chunks only.
+
 ### Legacy edition requests (API)
 
 `/v1/ask` runs `is_legacy_edition_query()` before cache or retrieval. Prior-edition
@@ -147,9 +166,32 @@ and documented in `.cursor/rules/eleventh_edition_only.mdc`.
 ### Pre-ingest workflow (next implementation steps)
 
 1. `preview-chunks` CLI - print N sample chunks per PDF, no Firestore write. **Done for `core_rules`.**
-2. Implement `core_rules` rule-number parser; validate on `data/rules/core_rules/`.
-3. Add figure detection + vision caption pass.
-4. Batch ingest with `--only-changed` against manifest SHA256.
+2. Implement `core_rules` rule-number parser; validate on `data/rules/core_rules/`. **Done - see `docs/core_rules_chunking.md`.**
+3. Add figure detection + vision caption pass. **Done for core rules** (`caption-core-rules-pages`, `page_captions.json`).
+4. Ingest `#New40k` core rules with figure metadata. **Done** (156 docs in `warhammer_rules_11th`).
+5. Batch ingest with `--only-changed` against manifest SHA256 (remaining PDF profiles).
+
+### Billing guardrails
+
+| Control | Status | Notes |
+|---------|--------|-------|
+| **Budget alert** | ✅ Live | Project-scoped **£5/mo** alert on `roboto-guilliman` (50/90/100%); email to owner |
+| **Billing kill switch** | ❌ Planned | Alert notifies only; does not stop Vertex/Firestore spend |
+
+**Kill switch (implement before public launch):** When monthly spend crosses a threshold
+(e.g. 80-100% of budget), automatically degrade or halt paid inference so a bad deploy or
+abuse cannot drain the card.
+
+Recommended implementation (Phase 0 ops):
+
+1. **Pub/Sub billing export** or **Monitoring alert policy** on billing metric → Cloud Function / Workflow.
+2. Set **`ASK_DISABLED=true`** in Secret Manager (or Firestore `ops/config` flag).
+3. **`/v1/ask`** checks flag first: return **503** with a short in-character message; skip
+   embedding + Gemini calls. **`/health`** stays 200 so CI smoke tests still pass.
+4. Manual re-enable via secret flip or console after investigating the spike.
+5. Optional: remove `allUsers` Cloud Run invoker when disabled (harder stop, slower to restore).
+
+Quality-over-availability: prefer a brief outage over serving hallucinated or quota-exhausted garbage answers.
 
 ---
 
@@ -275,7 +317,8 @@ PRs run `quality` only (no deploy, no eval).
    - Update `config.py` default: `gcp_project_id: str = "roboto-guilliman"`
    - Update `.env.example`: `GCP_PROJECT_ID=roboto-guilliman`
    - Update GitHub Actions secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
-   - Set a GCP billing budget alert at $5/mo (Twilio ~$1 + buffer for Vertex AI)
+   - Set a GCP billing budget alert at $5/mo (Twilio ~$1 + buffer for Vertex AI). **Done (£5/mo project alert).**
+   - Wire **billing kill switch** - see §2 Billing guardrails (503 on `/v1/ask` when spend threshold hit).
 
 1. **Firebase auth middleware** (`roboto_guilliman/api/auth.py`)
    - FastAPI dependency that extracts `Authorization: Bearer <id_token>`
@@ -722,6 +765,4 @@ A phase is complete when:
    API politely (see `.cursor/rules/gw_rules_downloads.mdc`). The CV portfolio can reference
    the architecture without exposing rules text.
 
-5. **11th edition timing:** Multiple pack versions may exist (10th ed faction packs vs #New40K).
-   Phase 4 errata metadata should prefer newest pack per faction when both are ingested.
-   The chunker currently uses flat `get_text("text")` - hierarchical parsing upgrade will help.
+5. **11th edition / #New40k timing:** ✅ Mapped. `#New40k - Core Rules` (Jun 2026) = 11th ed canonical ingest; Sep 2024 `Core Rules` = 10th ed → `excluded/`. Faction duplicates: prefer `#New40k` / newest manifest date per faction at ingest (Phase 4 errata metadata).

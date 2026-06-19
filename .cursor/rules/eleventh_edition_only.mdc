@@ -11,9 +11,29 @@ superseded PDFs, or unofficial sources.
 
 **This is non-negotiable.** Do not weaken guards, add bypass flags, or "temporarily" ingest excluded content.
 
+## Edition timeline (GW naming vs community)
+
+Games Workshop markets the **June 2026** launch as **#New40k** ("the new edition"). The community
+and wargaming press call this **11th edition** (successor to 10th, launched ~2023). roboto-guilliman
+uses **11th edition** in user-facing text; `#New40k` in download titles and folder logic.
+
+| When | GW product | Our folder | Edition | Ingest? |
+|------|------------|------------|---------|---------|
+| Sep 2024 | Core Rules (phase layout) | `excluded/` | **10th ed** player book | **Never** |
+| Jun 2026 | `#New40k - Core Rules` (numbered `01.03`…) | `core_rules/` | **11th ed** index PDF | **Yes** |
+| Ongoing | Core Rules Updates & Commentary | `updates_and_faq/` | Errata for current ed | Yes |
+| Any | Quick Start Guide | `excluded/` | Condensed 10th-era | **Never** |
+
+**Launch window:** Adepticon reveal Mar 2026; Armageddon box and edition go-live **20 Jun 2026**.
+Re-run `download-rules` after GW publishes new PDFs so manifest SHA256 stays current.
+
+**LLM training bias:** Base models skew toward **9th/10th** rules (coherency circles, old charge
+ sequencing, CP stratagem spam). Never answer from parametric memory when retrieval is empty or thin.
+RAG context + citations only. Empty index → "rules do not cover this", not a best guess from training.
+
 ## What counts as out of scope
 
-- **Wrong edition**: 9th/10th edition rules, old FAQs, fan rules, wiki summaries, BattleScribe text
+- **Wrong edition**: 9th/**10th** edition rules (Sep 2024 Core Rules PDF is **10th ed**), old FAQs, fan rules, wiki summaries, BattleScribe text
 - **Superseded layouts**: Sep 2024 "Core Rules" (phase layout, no `01.03` numbers) - lives in `data/rules/excluded/`
 - **Quick Start Guide** - condensed, not citable; also `excluded/`
 - **Duplicate faction packs**: when legacy `faction-packs` and `#New40k` versions both exist, ingest **newest only** (manifest date / `#New40k` wins)
@@ -22,8 +42,8 @@ superseded PDFs, or unofficial sources.
 
 | Content | Folder | Ingest? |
 |---------|--------|---------|
-| Numbered core rules | `data/rules/core_rules/` (`#New40k - Core Rules` only) | Yes |
-| Sep 2024 core rules, quick start | `data/rules/excluded/` | **Never** |
+| Numbered core rules | `data/rules/core_rules/` (`#New40k - Core Rules` = 11th ed) | Yes |
+| Sep 2024 Core Rules, quick start | `data/rules/excluded/` (**10th ed** layout / condensed) | **Never** |
 | Updates, FAQ, commentary | `data/rules/updates_and_faq/` | Yes (with errata metadata later) |
 | Faction packs | `data/rules/faction_packs/` | Yes (one active version per faction) |
 
@@ -41,7 +61,7 @@ Routing logic: `roboto_guilliman/ingestion/source_registry.py` - extend here, do
 ## Before any ingest or batch-ingest PR
 
 1. Confirm no files under `data/rules/excluded/` are in the ingest path
-2. Confirm core rules source is `#New40k - Core Rules`, not Sep 2024 layout
+2. Confirm core rules source is `#New40k - Core Rules` (11th ed), not Sep 2024 Core Rules (10th ed)
 3. For faction duplicates, confirm only the intended version is indexed
 4. Run `poetry run preview-chunks --stats` on core rules and spot-check rule numbers
 

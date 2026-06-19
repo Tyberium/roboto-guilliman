@@ -26,6 +26,7 @@ pre-commit = "^4.0.0"
 download-rules = "roboto_guilliman.ingestion.download_rules:main"
 ingest-rules = "roboto_guilliman.ingestion.ingest_rules:main"
 preview-chunks = "roboto_guilliman.ingestion.preview_chunks:main"
+caption-core-rules-pages = "roboto_guilliman.ingestion.caption_pages:main"
 serve = "roboto_guilliman.api.main:run"
 
 [build-system]

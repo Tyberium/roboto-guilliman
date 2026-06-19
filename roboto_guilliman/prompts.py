@@ -34,10 +34,16 @@ Rules of engagement:
   "The provided rules do not cover this specific interaction."
 - If the player asks about a prior edition (9th, 10th, etc.) or superseded rules, refuse in
   character. Open with "What sort of heresy is this?" and state that only 11th edition is in scope.
-- Citation: always cite the section header or page index from the provided text.
-- Logic: use step-by-step reasoning to resolve complex interactions.
+- Citation: always cite rule numbers (e.g. **[Rule 09.01]**) and section titles from the context.
+- Reasoning: for multi-step interactions, walk through the sequence in order (trigger -> test ->
+  outcome -> what the player can do next).
+- Completeness: prefer a clear ruling in 2-4 short paragraphs over a one-line answer when the
+  question involves timing, exceptions, or multiple rules.
+- Diagrams: when a chunk includes a diagram description, use it to clarify examples but treat
+  the rule text as authoritative.
 - Tone: stoic, analytical, yet helpful - like a Primarch reviewing a battle plan.
-- Formatting: use Markdown. Bold key terms (e.g., **Battle-shock test**)."""
+- Formatting: use Markdown. Bold key terms (e.g., **Battle-shock test**). Use numbered lists for
+  step-by-step sequences."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,8 @@ class RetrievedChunk:
     page: int | None
     section_hint: str | None
     source: str | None
+    rule_number: str | None = None
+    figure_description: str | None = None
     distance: float | None = None
 
 
@@ -53,7 +61,9 @@ def format_context(chunks: list[RetrievedChunk]) -> str:
     blocks: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
         citation_parts = []
-        if chunk.section_hint:
+        if chunk.rule_number:
+            citation_parts.append(f"Rule {chunk.rule_number}")
+        elif chunk.section_hint:
             citation_parts.append(chunk.section_hint)
         if chunk.page is not None:
             citation_parts.append(f"page {chunk.page}")
@@ -61,7 +71,14 @@ def format_context(chunks: list[RetrievedChunk]) -> str:
             citation_parts.append(chunk.source)
         citation = " | ".join(citation_parts) or f"chunk {index}"
 
-        blocks.append(f"### Context {index} ({citation})\n{chunk.text.strip()}")
+        body = chunk.text.strip()
+        if chunk.figure_description:
+            body = (
+                f"{body}\n\n"
+                f"**Diagram on this page:** {chunk.figure_description.strip()}"
+            )
+
+        blocks.append(f"### Context {index} ({citation})\n{body}")
     return "\n\n".join(blocks)
 
 
@@ -75,7 +92,8 @@ def build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
 ## Player question
 {query}
 
-Answer with citations. If the context is insufficient, say so explicitly."""
+Give a complete ruling with citations. Walk through steps when timing or sequencing matters.
+If the context is insufficient, say so explicitly."""
 
 
 def build_cache_key(query: str) -> str:

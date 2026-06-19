@@ -12,6 +12,7 @@ from google.cloud.firestore_v1.vector import Vector
 
 from roboto_guilliman.config import Settings, get_settings
 from roboto_guilliman.embeddings import EmbeddingService
+from roboto_guilliman.gcp_auth import optional_local_credentials
 from roboto_guilliman.prompts import RetrievedChunk, build_cache_key
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,11 @@ logger = logging.getLogger(__name__)
 class RulesRetriever:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
+        credentials = optional_local_credentials()
         self.db = firestore.Client(
             project=self.settings.gcp_project_id,
             database=self.settings.firestore_database,
+            credentials=credentials,
         )
         self.embedder = EmbeddingService(self.settings)
 
@@ -44,12 +47,16 @@ class RulesRetriever:
         chunks: list[RetrievedChunk] = []
         for doc in results:
             data = doc.to_dict() or {}
+            section_hint = data.get("section_hint") or data.get("parent_section")
+            figure_description = data.get("figure_description")
             chunks.append(
                 RetrievedChunk(
                     text=str(data.get("text", "")),
                     page=data.get("page"),
-                    section_hint=data.get("section_hint"),
+                    section_hint=str(section_hint) if section_hint else None,
                     source=data.get("source"),
+                    rule_number=data.get("rule_number"),
+                    figure_description=str(figure_description) if figure_description else None,
                     distance=getattr(doc, "distance", None),
                 )
             )
@@ -61,9 +68,11 @@ class ChatHistoryCache:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
+        credentials = optional_local_credentials()
         self.db = firestore.Client(
             project=self.settings.gcp_project_id,
             database=self.settings.firestore_database,
+            credentials=credentials,
         )
         self.collection = self.db.collection(self.settings.chat_history_collection)
 

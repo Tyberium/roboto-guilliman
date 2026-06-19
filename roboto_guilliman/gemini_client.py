@@ -6,17 +6,22 @@ from google import genai
 from google.genai import types
 
 from roboto_guilliman.config import Settings, get_settings
+from roboto_guilliman.gcp_auth import optional_local_credentials
 from roboto_guilliman.prompts import SYSTEM_PERSONA, RetrievedChunk, build_user_prompt
 
 
 class GeminiArbiter:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
-        self.client = genai.Client(
-            vertexai=True,
-            project=self.settings.gcp_project_id,
-            location=self.settings.gcp_location,
-        )
+        credentials = optional_local_credentials()
+        client_kwargs: dict[str, object] = {
+            "vertexai": True,
+            "project": self.settings.gcp_project_id,
+            "location": self.settings.gcp_location,
+        }
+        if credentials is not None:
+            client_kwargs["credentials"] = credentials
+        self.client = genai.Client(**client_kwargs)
 
     def answer(self, query: str, chunks: list[RetrievedChunk]) -> str:
         if not chunks:
@@ -30,7 +35,8 @@ class GeminiArbiter:
             contents=build_user_prompt(query, chunks),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PERSONA,
-                temperature=0.2,
+                temperature=self.settings.llm_temperature,
+                max_output_tokens=self.settings.llm_max_output_tokens,
             ),
         )
         text = response.text

@@ -26,7 +26,9 @@ class AskRequest(BaseModel):
 class ContextChunkResponse(BaseModel):
     page: int | None
     section_hint: str | None
+    rule_number: str | None = None
     source: str | None
+    has_figure: bool = False
     preview: str
 
 
@@ -117,7 +119,9 @@ def ask_rules(
             ContextChunkResponse(
                 page=chunk.page,
                 section_hint=chunk.section_hint,
+                rule_number=chunk.rule_number,
                 source=chunk.source,
+                has_figure=bool(chunk.figure_description),
                 preview=_chunk_preview(chunk),
             )
             for chunk in chunks

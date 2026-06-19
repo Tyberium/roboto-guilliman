@@ -21,8 +21,10 @@ class Settings(BaseSettings):
 
     embedding_model: str = "text-embedding-004"
     llm_model: str = "gemini-2.5-flash-lite"
+    llm_temperature: float = 0.3
+    llm_max_output_tokens: int = 2048
 
-    top_k: int = 6
+    top_k: int = 8
     chunk_size: int = 1200
     chunk_overlap: int = 200
 
