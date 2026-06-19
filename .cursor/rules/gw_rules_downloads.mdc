@@ -1,0 +1,53 @@
+---
+description: Warhammer Community rules PDF discovery and download conventions
+globs: roboto_guilliman/ingestion/**
+alwaysApply: false
+---
+
+# GW rules downloads (Warhammer Community)
+
+Use the **official downloads search API**, not HTML scraping or headless browsers.
+
+## Discovery
+
+```http
+POST https://www.warhammer-community.com/api/search/downloads/
+Content-Type: application/json
+
+{
+  "index": "downloads_v2",
+  "searchTerm": "",
+  "gameSystem": "warhammer-40000",
+  "language": "english"
+}
+```
+
+Response `hits[]` include `title`, `download_categories[]`, and `id.file` (PDF filename).
+Asset URL: `https://assets.warhammer-community.com/{id.file}`
+
+Human index page (reference only): https://www.warhammer-community.com/en-gb/downloads/warhammer-40000/
+
+## Politeness (required)
+
+- **Sequential downloads only** - no parallel requests
+- **Default 5s delay** between PDF fetches (`--delay` to increase if needed)
+- **Identifying User-Agent**: `roboto-guilliman/0.1 (+https://github.com/Tyberium/roboto-guilliman; rules-ingest-tool)`
+- **Backoff** on HTTP 429/503 (exponential, cap 120s)
+- **Skip unchanged** files via SHA256 manifest at `data/rules_pdfs/manifest.json`
+- **Never run bulk download in CI** unless explicitly requested - manual or scheduled local/job only
+
+## Storage and copyright
+
+- Save PDFs under `data/rules_pdfs/` (gitignored)
+- **Never commit** PDFs or rules text to the repo
+- Ingest chunks go to **private** Firestore only; do not expose GW content in docs, demos, or logs
+
+## CLI
+
+```bash
+poetry run download-rules              # full sync, 5s between files
+poetry run download-rules --dry-run    # list only
+poetry run download-rules --force      # re-download all
+```
+
+After download, ingest with `poetry run ingest-rules` per PDF or a future batch ingest command.

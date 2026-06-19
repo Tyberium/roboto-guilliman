@@ -10,28 +10,49 @@
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| FastAPI on Cloud Run | ✅ Deployed | `min-instances=0`, 256Mi, free tier |
-| Firestore vector store | ✅ Live | 768-dim COSINE index, `warhammer_rules_11th` collection |
+| FastAPI on Cloud Run | ✅ Deployed | `europe-west1`, public `/health`, `/v1/ask` live |
+| Firestore vector store | ✅ Live | 768-dim COSINE index, `warhammer_rules_11th` collection (empty until ingest) |
 | Chat history cache | ✅ Live | SHA-256 keyed, skips LLM on cache hit |
 | Gemini 2.5 Flash-Lite | ✅ Wired | Vertex AI, `temperature=0.2`, no hallucination persona |
 | `text-embedding-004` | ✅ Wired | Separate task types for doc/query |
 | Recursive chunker | ✅ Tested | Paragraph-aware, ALL-CAPS section hint detection |
+| Download CLI | ✅ Working | `poetry run download-rules` via GW public downloads API (~72 PDFs) |
 | Ingest CLI | ✅ Working | `poetry run ingest-rules`, batch commits to Firestore |
 | Pulumi IaC | ✅ CI-managed | Python, `main` stack, Artifact Registry + Cloud Run |
-| GitHub Actions CI | ✅ Passing | ruff → pytest → Docker build → `pulumi up` → smoke test |
+| GitHub Actions CI | ✅ Passing | ruff → pytest → Docker build → `pulumi up` → smoke test `/health` |
+| Local rules corpus | ✅ Downloaded | `data/rules_pdfs/` + manifest (~825 MB, gitignored) |
+
+### Rules download pipeline (implemented)
+
+Warhammer Community exposes a **public search API** - no HTML scraping required:
+
+```
+POST /api/search/downloads/
+{ "index": "downloads_v2", "searchTerm": "", "gameSystem": "warhammer-40000", "language": "english" }
+→ hits[].id.file → https://assets.warhammer-community.com/{file}
+```
+
+`download_rules.py` queries the API, then downloads PDFs **sequentially** with a 5s delay,
+SHA256 manifest skip-on-unchanged, and exponential backoff on 429/503. Conventions are
+documented in `.cursor/rules/gw_rules_downloads.mdc`.
+
+Categories synced: core rules and key downloads, event companions, faction packs (#New40K
+and legacy), miscellaneous.
 
 ### Gaps (the entire roadmap targets these)
 
 | Gap | Impact | Phase |
 |-----|--------|-------|
+| Firestore corpus empty | API returns "no relevant rule text" until ingest runs | 5 |
+| No batch ingest | 72 PDFs downloaded locally; ingest is still one PDF at a time | 5 |
 | No auth on `/v1/ask` | Anyone can drain your Vertex AI quota | 1 |
 | No WhatsApp channel | Primary use-case undelivered | 2 |
 | No Battleplan frontend widget | Secondary integration undelivered | 3 |
 | Flat PDF extraction (PyMuPDF text) | Misses table structure, weapon profiles | 4 |
 | Dense-only retrieval | Keyword-heavy queries (ability names, stratagems) under-perform | 4 |
-| No errata/version metadata | Outdated rules could be retrieved | 4 |
+| No errata/version metadata | Outdated rules could be retrieved (multiple pack versions downloaded) | 4 |
 | No evaluation harness | No way to measure retrieval quality regression | 5 |
-| No CI-driven ingest | Rules PDF updates require manual intervention | 5 |
+| No scheduled download refresh | GW errata requires manual `download-rules` re-run | 5 |
 | No mypy in CI | Type errors slip through | 1 |
 | No rate limiting | DoS / quota exhaustion risk | 2 |
 
@@ -64,8 +85,9 @@
               └───────────────────┘
                        ▲
         ┌──────────────┴──────────────────┐
-        │  Ingest pipeline (CI or manual) │
-        │  GCS bucket → ingest-rules CLI  │
+        │  Ingest pipeline (manual today) │
+        │  download-rules → local PDFs    │
+        │  → ingest-rules → Firestore     │
         └─────────────────────────────────┘
 
   Clients
@@ -93,7 +115,7 @@
 | Rate limiting | Firestore counters (no Redis needed) | Uses free Firestore quota |
 | Evaluation | `ragas` (offline, runs in CI) | Open-source, no hosted service needed |
 | Secrets | GitHub Actions secrets + Cloud Run env vars | Free |
-| PDF storage (ingest source) | GCS free tier (5 GB) | Free |
+| PDF storage (ingest source) | Local `data/rules_pdfs/` (gitignored); GCS optional in Phase 5 | Free |
 
 **Twilio note:** Using a dedicated Twilio number (~$1/mo) from day one. This avoids the sandbox join-code step entirely - members just message the bot number directly or add it to the group. It is the only deliberate spend in the stack.
 
@@ -467,23 +489,36 @@ Firestore + Vertex AI  (roboto-guilliman project, fully isolated)
    - Only on `main` branch pushes (too slow for PRs)
    - Uploads `eval_report.json` as a workflow artifact
 
-#### 5b - CI-Driven Ingest
+#### 5b - Batch Ingest & Refresh
 
-**Goal:** Drop a rules PDF into GCS, CI picks it up and ingests it automatically.
+**Goal:** Ingest the downloaded rules corpus into Firestore. Refresh when GW publishes
+errata via `download-rules`, then re-ingest changed PDFs only.
+
+**Prerequisites (done):**
+- `poetry run download-rules` syncs ~72 English WH40K PDFs via GW public API
+- Manifest at `data/rules_pdfs/manifest.json` tracks SHA256 per file
 
 **Implementation tasks:**
 
-1. **GCS bucket** (`infra/pulumi/__main__.py`)
-   - Add `gcp.storage.Bucket("rules_pdfs", ...)` with lifecycle rule: delete after 30 days
+1. **Batch ingest CLI** (`ingest_rules.py` or new `ingest_all.py`)
+   - Walk `data/rules_pdfs/manifest.json`, run `ingest-rules` per PDF
+   - `--source-name` derived from manifest title + category slug
+   - `--only-changed` skips PDFs whose SHA256 matches last ingested hash in Firestore metadata
+   - Rate-limit embedding batches to stay within Vertex free quota
+
+2. **GCS bucket (optional)** (`infra/pulumi/__main__.py`)
+   - Add `gcp.storage.Bucket("rules_pdfs", ...)` if CI-driven ingest is needed later
    - IAM: runtime SA gets `roles/storage.objectViewer`
 
-2. **CI ingest job** (`.github/workflows/ingest.yml` - new workflow)
-   - Triggered by: `workflow_dispatch` (manual) or `push` to `rules-pdfs/` path
-   - Steps: authenticate GCP → download PDF from GCS → `poetry run ingest-rules`
-   - Parameterised: `source_name`, `supersedes` (optional)
-   - Dry-run mode: `workflow_dispatch` input to preview without writing
+3. **CI ingest job (optional)** (`.github/workflows/ingest.yml`)
+   - Triggered by: `workflow_dispatch` only (not on every push)
+   - Steps: `download-rules` (with delay) → batch ingest changed PDFs
+   - Never commit PDFs; use GCS or ephemeral runner storage
 
-3. **Ingest status badge** - `README.md` badge showing last ingest run status
+4. **Scheduled refresh (optional)** - monthly `download-rules` + ingest changed files;
+   document in README; do not hammer GW servers (keep 5s+ delay)
+
+5. **Ingest status** - log last sync timestamp; optional README badge for ingest workflow
 
 ---
 
@@ -561,7 +596,7 @@ Phases 4 and 5 are independent of each other within their phase.
 | 4b - Hybrid BM25 search | Medium | 1 |
 | 4c - Errata engine | Medium | 1 |
 | 5a - Evaluation harness | Medium | 1 |
-| 5b - CI ingest pipeline | Low-Medium | 1 |
+| 5b - Batch ingest + refresh | Medium | 1-2 |
 | 6 - Portfolio polish | Low | 1 |
 | **Total** | | **~11 sessions** |
 
@@ -587,6 +622,11 @@ A phase is complete when:
 
 3. **Twilio number:** Using a dedicated WhatsApp Business number via Twilio (~$1/mo) from day one. No sandbox, no join-code friction. The number is provisioned manually once; everything after that (webhook config, secret rotation) is CI-managed.
 
-4. **Rules PDF distribution rights:** GW rules are copyright. The ingest pipeline stores chunk text in Firestore. Ensure the GCS bucket and Firestore collection are private and not exported. The CV portfolio can reference the architecture without exposing the actual rules text.
+4. **Rules PDF distribution rights:** GW rules are copyright. PDFs stay in gitignored
+   `data/rules_pdfs/`; ingest chunks go to private Firestore only. Use GW's public downloads
+   API politely (see `.cursor/rules/gw_rules_downloads.mdc`). The CV portfolio can reference
+   the architecture without exposing rules text.
 
-5. **11th edition timing:** The README references 11th edition. Phase 4 hierarchical parsing should be tested against an actual 11th ed PDF. The chunker currently uses flat `get_text("text")` - the upgrade will be noticeable.
+5. **11th edition timing:** Multiple pack versions may exist (10th ed faction packs vs #New40K).
+   Phase 4 errata metadata should prefer newest pack per faction when both are ingested.
+   The chunker currently uses flat `get_text("text")` - hierarchical parsing upgrade will help.
