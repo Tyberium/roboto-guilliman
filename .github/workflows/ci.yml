@@ -1,10 +1,20 @@
 name: CI
 
+# Skip CI when only docs, cursor rules, or markdown change (no app/infra/deploy impact).
+# Any change outside paths-ignore still runs the full test + deploy pipeline.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".cursor/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".cursor/**"
 
 env:
   GCP_PROJECT_ID: roboto-guilliman
