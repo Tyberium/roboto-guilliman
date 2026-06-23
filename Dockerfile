@@ -13,6 +13,8 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-interaction --no-ansi --only main --no-root
 
 COPY roboto_guilliman ./roboto_guilliman
+COPY whatsapp-integration ./whatsapp-integration
+COPY discord-integration ./discord-integration
 RUN poetry install --no-interaction --no-ansi --only main
 
 EXPOSE 8080

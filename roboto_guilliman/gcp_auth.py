@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from google.auth.credentials import Credentials as AuthCredentials
@@ -13,6 +14,9 @@ from google.auth.exceptions import DefaultCredentialsError
 from google.oauth2.credentials import Credentials
 
 logger = logging.getLogger(__name__)
+
+_GCLOUD_TOKEN_TTL_SECONDS = 3000
+_cached_gcloud_credentials: tuple[Credentials, float] | None = None
 
 
 def _running_on_gcp() -> bool:
@@ -41,13 +45,22 @@ def _gcloud_executable() -> str | None:
 
 
 def gcloud_user_credentials() -> Credentials:
+    global _cached_gcloud_credentials
+    now = time.time()
+    if _cached_gcloud_credentials is not None:
+        credentials, cached_at = _cached_gcloud_credentials
+        if now - cached_at < _GCLOUD_TOKEN_TTL_SECONDS:
+            return credentials
+
     gcloud = _gcloud_executable()
     if gcloud is None:
         raise FileNotFoundError(
             "gcloud not found; run `gcloud auth application-default login` or install the Cloud SDK."
         )
     token = subprocess.check_output([gcloud, "auth", "print-access-token"], text=True).strip()
-    return Credentials(token=token)
+    credentials = Credentials(token=token)
+    _cached_gcloud_credentials = (credentials, now)
+    return credentials
 
 
 def optional_local_credentials() -> AuthCredentials | None:

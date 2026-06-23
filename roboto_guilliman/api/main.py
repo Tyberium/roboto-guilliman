@@ -10,9 +10,11 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from roboto_guilliman.ask_pipeline import run_ask
 from roboto_guilliman.config import Settings, get_settings
+from whatsapp_integration.gateway import router as whatsapp_router
 from roboto_guilliman.gemini_client import GeminiArbiter
-from roboto_guilliman.prompts import RetrievedChunk, is_legacy_edition_query, legacy_edition_refusal
+from roboto_guilliman.prompts import RetrievedChunk
 from roboto_guilliman.retriever import ChatHistoryCache, RulesRetriever
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.include_router(whatsapp_router)
 
 
 def get_state() -> AppState:
@@ -92,29 +95,17 @@ def ask_rules(
     if not query:
         raise HTTPException(status_code=400, detail="Query must not be empty.")
 
-    if is_legacy_edition_query(query):
-        return AskResponse(
-            answer=legacy_edition_refusal(),
-            cached=False,
-            context_chunks=[],
-        )
-
-    cached_answer: str | None = None
-    if body.use_cache:
-        cached_answer = state.cache.get(query)
-
-    if cached_answer:
-        return AskResponse(answer=cached_answer, cached=True, context_chunks=[])
-
-    chunks = state.retriever.retrieve(query)
-    answer = state.arbiter.answer(query, chunks)
-
-    if body.use_cache:
-        state.cache.put(query, answer)
+    answer, cached, chunks = run_ask(
+        query,
+        retriever=state.retriever,
+        cache=state.cache,
+        arbiter=state.arbiter,
+        use_cache=body.use_cache,
+    )
 
     return AskResponse(
         answer=answer,
-        cached=False,
+        cached=cached,
         context_chunks=[
             ContextChunkResponse(
                 page=chunk.page,

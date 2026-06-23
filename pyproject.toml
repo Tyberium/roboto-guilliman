@@ -3,7 +3,11 @@ name = "roboto-guilliman"
 version = "1.0.0"
 description = "AI-powered Warhammer 11th edition rules arbiter for battleplan.uk"
 authors = ["tyberium <tyberium@gmx.com>"]
-packages = [{ include = "roboto_guilliman" }]
+packages = [
+    { include = "roboto_guilliman" },
+    { include = "whatsapp_integration", from = "whatsapp-integration" },
+    { include = "discord_integration", from = "discord-integration" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.13"
@@ -15,6 +19,8 @@ pymupdf = "^1.24.0"
 pydantic = "^2.9.0"
 pydantic-settings = "^2.6.0"
 python-dotenv = "^1.0.0"
+httpx = "^0.27.0"
+discord-py = "^2.4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -28,6 +34,7 @@ ingest-rules = "roboto_guilliman.ingestion.ingest_rules:main"
 preview-chunks = "roboto_guilliman.ingestion.preview_chunks:main"
 caption-core-rules-pages = "roboto_guilliman.ingestion.caption_pages:main"
 serve = "roboto_guilliman.api.main:run"
+discord-bot = "discord_integration.runner:main"
 
 [build-system]
 requires = ["poetry>=1.8"]
@@ -38,4 +45,4 @@ line-length = 100
 target-version = "py313"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "whatsapp-integration/tests", "discord-integration/tests"]
